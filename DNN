@@ -1,0 +1,121 @@
+from google.colab import drive
+drive.mount('/content/drive')
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+import matplotlib.pyplot as plt
+pos_raw = pd.read_csv('/content/drive/MyDrive/Mirna/negative.txt', sep='\t', header=None)
+neg_raw = pd.read_csv('/content/drive/MyDrive/Mirna/positivess.txt', sep='\t', header=None)
+# negative: we only need Gene, miRNA, Seq1, Seq2
+neg = pd.DataFrame({
+    'Species': 'Unknown',
+    'Gene': neg_raw[0],
+    'miRNA': neg_raw[1],
+    'Seq1': neg_raw[2].astype(str).str.replace('-', '', regex=False),  # ensure string
+    'Seq2': neg_raw[3].astype(str).str.replace('-', '', regex=False)
+})
+neg['Label'] = 0
+
+pos = pd.DataFrame({
+    'Species': pos_raw[0],
+    'Gene': pos_raw[1],
+    'miRNA': pos_raw[2],
+    'Seq1': pos_raw[3].astype(str).str.replace('-', '', regex=False),
+    'Seq2': pos_raw[4].astype(str).str.replace('-', '', regex=False)
+})
+pos['Label'] = 1
+
+# 3. Combine
+data = pd.concat([pos, neg], ignore_index=True)
+print(data.head())
+print(data.shape)
+# ===============================
+# 3. Feature extraction
+# ===============================
+from Bio import pairwise2
+from Bio.Seq import Seq
+def extract_features(row):
+    seq1 = row['Seq1']
+    seq2 = row['Seq2']
+
+    alignment = pairwise2.align.globalxx(seq1, seq2, one_alignment_only=True)[0]
+    aligned1, aligned2 = alignment.seqA, alignment.seqB
+
+    gc_pairs = sum((a,b) in [('G','C'),('C','G')] for a,b in zip(aligned1, aligned2))
+    au_pairs = sum((a,b) in [('A','U'),('U','A')] for a,b in zip(aligned1, aligned2))
+    gu_pairs = sum((a,b) in [('G','U'),('U','G')] for a,b in zip(aligned1, aligned2))
+    mismatches = sum(a != b for a,b in zip(aligned1, aligned2))
+
+    seed1 = aligned1[:8]
+    seed2 = aligned2[:8]
+    gc_seed = sum((a,b) in [('G','C'),('C','G')] for a,b in zip(seed1, seed2))
+    au_seed = sum((a,b) in [('A','U'),('U','A')] for a,b in zip(seed1, seed2))
+    gu_seed = sum((a,b) in [('G','U'),('U','G')] for a,b in zip(seed1, seed2))
+    mismatch_seed = sum(a != b for a,b in zip(seed1, seed2))
+
+    return pd.Series({
+        'AlignScore': alignment.score,
+        'Aligned_positions': len(aligned1),
+        'GC_pairs': gc_pairs,
+        'AU_pairs': au_pairs,
+        'GU_pairs': gu_pairs,
+        'Mismatches': mismatches,
+        'GC_seed': gc_seed,
+        'AU_seed': au_seed,
+        'GU_seed': gu_seed,
+        'Mismatch_seed': mismatch_seed
+    })
+
+features = data.apply(extract_features, axis=1)
+dataset = pd.concat([data, features], axis=1)
+
+# feature matrix
+feature_cols = ['AlignScore','Aligned_positions','GC_pairs','AU_pairs','GU_pairs',
+                'Mismatches','GC_seed','AU_seed','GU_seed','Mismatch_seed']
+X = dataset[feature_cols].values
+y = dataset['Label'].values
+X = np.nan_to_num(X)
+# ===============================
+# 4. Train/test split + scaler
+# ===============================
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+# ===============================
+# 5. Simple DNN classifier
+# ===============================
+model = Sequential()
+model.add(Dense(64, input_dim=X_train.shape[1], activation='relu'))
+model.add(Dropout(0.3))
+model.add(Dense(32, activation='relu'))
+model.add(Dense(1, activation='sigmoid'))
+model.compile(loss='binary_crossentropy', optimizer=Adam(0.001), metrics=['accuracy'])
+
+history = model.fit(X_train, y_train, validation_data=(X_test, y_test),
+                    epochs=20, batch_size=32, verbose=1)
+
+plt.plot(history.history['accuracy'], label='train')
+plt.plot(history.history['val_accuracy'], label='val')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.show()
+from sklearn.neural_network import MLPClassifier
+
+clf = MLPClassifier(hidden_layer_sizes=(64,32), max_iter=500, random_state=42)
+clf.fit(X_train, y_train)
+from sklearn.metrics import accuracy_score, f1_score, classification_report
+
+y_pred = clf.predict(X_test)
+
+acc = accuracy_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+
+print(f"Accuracy: {acc:.3f}")
+print(f"F1 score: {f1:.3f}")
+print(classification_report(y_test, y_pred))
