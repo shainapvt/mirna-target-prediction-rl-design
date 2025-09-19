@@ -2,7 +2,7 @@
 A Python project that extracts biological features from miRNA–target pairs, trains a deep neural network for interaction prediction, and applies reinforcement learning to design new miRNA sequences.
 # miRNA-Target Prediction and Sequence Design with Deep Learning & Reinforcement Learning
 
-![flowchart](flowchart.png) <!-- put your flowchart image here -->
+
 
 ## 📑 Overview
 
