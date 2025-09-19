@@ -1,0 +1,54 @@
+# ===============================
+# 6. RL sequence design loop
+# ===============================
+nucleotides = ['A','C','G','U']
+
+def random_seq(length):
+    return ''.join(np.random.choice(nucleotides, length))
+
+def compute_reward(seq1, seq2):
+    row = {'Species':'Unknown','Gene':'GENE','miRNA':'MIR','Seq1':seq1,'Seq2':seq2}
+    feat = extract_features(row)
+    X_feat = feat[feature_cols].values.reshape(1,-1)
+    X_scaled = scaler.transform(X_feat)
+    pred = model.predict(X_scaled, verbose=0)[0][0]
+    return pred
+
+def mutate_sequence(seq):
+    seq_list = list(seq)
+    pos = np.random.randint(0, len(seq_list))
+    current_nt = seq_list[pos]
+    new_nt = np.random.choice([n for n in nucleotides if n != current_nt])
+    seq_list[pos] = new_nt
+    return ''.join(seq_list)
+
+# Example target sequence
+target_seq = "CGUAAUAAUGAGUGCCAUGCU"
+seq_len = len(target_seq)
+
+current_seq = random_seq(seq_len)
+current_reward = compute_reward(current_seq, target_seq)
+
+best_seq = current_seq
+best_reward = current_reward
+rewards = []
+
+for step in range(500):
+    candidate_seq = mutate_sequence(current_seq)
+    candidate_reward = compute_reward(candidate_seq, target_seq)
+    if candidate_reward > current_reward:
+        current_seq = candidate_seq
+        current_reward = candidate_reward
+        if current_reward > best_reward:
+            best_reward = current_reward
+            best_seq = current_seq
+    rewards.append(current_reward)
+
+print("Best sequence found:", best_seq)
+print("Predicted binding score:", best_reward)
+
+plt.plot(rewards)
+plt.xlabel('Step')
+plt.ylabel('Predicted binding probability')
+plt.title('RL sequence design')
+plt.show()
